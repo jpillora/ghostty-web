@@ -21,21 +21,16 @@ This repository provides a **foundation for building web-based terminals** using
 
 ## Quick Start
 
-### 1. Build the WASM
-
 ```bash
-# Build ghostty-vt.wasm from Ghostty source
-cd /tmp/ghostty
-zig build lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall
-cp zig-out/bin/ghostty-vt.wasm ./
+./run-demo.sh
+# Opens: http://localhost:8000/examples/sgr-demo.html
 ```
 
-### 2. Run the Demo
-
-```bash
-python3 -m http.server 8000
-# Open: http://localhost:8000/examples/sgr-demo.html
-```
+The script will automatically:
+1. Check if `ghostty-vt.wasm` exists
+2. Build it from Ghostty source if needed
+3. Start an HTTP server
+4. Show you the URL to open
 
 ## Usage
 
