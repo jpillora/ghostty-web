@@ -257,27 +257,33 @@ export class CanvasRenderer {
       }
     }
     
-    // Check if we need to redraw selection-affected lines
+    // Check if we have selection and need to redraw those lines
     const hasSelection = this.selectionManager && this.selectionManager.hasSelection();
-    let selectionRows = new Set<number>();
+    const selectionRows = new Set<number>();
+    
     if (hasSelection) {
       const coords = this.selectionManager!.getSelectionCoords();
       if (coords) {
+        // Mark selection rows for redraw
         for (let row = coords.startRow; row <= coords.endRow; row++) {
           selectionRows.add(row);
         }
       }
     }
     
+    // Track if anything was actually rendered
+    let anyLinesRendered = false;
+    
     // Render each line
     for (let y = 0; y < dims.rows; y++) {
-      // Render if dirty OR if it has selection
+      // Render if forcing all, or if dirty, or if it has selection
       const needsRender = forceAll || buffer.isRowDirty(y) || selectionRows.has(y);
       
       if (!needsRender) {
         continue;
       }
       
+      anyLinesRendered = true;
       const line = buffer.getLine(y);
       if (line) {
         this.renderLine(line, y, dims.cols);
@@ -285,7 +291,9 @@ export class CanvasRenderer {
     }
     
     // Render selection highlight AFTER all text (so it overlays)
-    if (hasSelection) {
+    // Only render if we actually rendered some lines
+    if (hasSelection && anyLinesRendered) {
+      // Draw selection overlay - only when we've redrawn the underlying text
       this.renderSelection(dims.cols);
     }
     
@@ -558,15 +566,10 @@ export class CanvasRenderer {
     
     const { startCol, startRow, endCol, endRow } = coords;
     
-    // Debug: log selection coordinates
-    console.log(`Rendering selection: rows ${startRow}-${endRow}, cols ${startCol}-${endCol}`);
-    
     // Use semi-transparent fill for selection
     this.ctx.save();
     this.ctx.fillStyle = this.theme.selectionBackground;
     this.ctx.globalAlpha = 0.5; // Make it semi-transparent so text is visible
-    
-    console.log(`Selection color: ${this.theme.selectionBackground}, alpha: ${this.ctx.globalAlpha}`);
     
     for (let row = startRow; row <= endRow; row++) {
       const colStart = (row === startRow) ? startCol : 0;
@@ -577,12 +580,10 @@ export class CanvasRenderer {
       const width = (colEnd - colStart + 1) * this.metrics.width;
       const height = this.metrics.height;
       
-      console.log(`Drawing selection rect: x=${x}, y=${y}, w=${width}, h=${height}`);
       this.ctx.fillRect(x, y, width, height);
     }
     
     this.ctx.restore();
-    console.log('Selection rendering complete');
   }
   
   /**
