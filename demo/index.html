@@ -247,11 +247,6 @@
         console.log('WebSocket connected - PTY mode active');
         console.log('Terminal onData handler:', term.onData ? 'registered' : 'NOT REGISTERED');
         
-        // Send current terminal size to server
-        const { cols, rows } = term;
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
-        console.log(`Sent initial size to server: ${cols}x${rows}`);
-        
         // Focus the terminal
         term.focus();
       };
