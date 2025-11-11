@@ -112,6 +112,13 @@ export class SelectionManager {
   }
   
   /**
+   * Check if currently in the process of selecting (mouse is down)
+   */
+  isActivelySelecting(): boolean {
+    return this.isSelecting;
+  }
+  
+  /**
    * Clear the selection
    */
   clearSelection(): void {
@@ -357,6 +364,9 @@ export class SelectionManager {
    * Fallback clipboard copy using execCommand (works in more contexts)
    */
   private copyToClipboardFallback(text: string): void {
+    // Save the currently focused element so we can restore it
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    
     try {
       // Create a temporary textarea element
       const textarea = document.createElement('textarea');
@@ -367,11 +377,17 @@ export class SelectionManager {
       document.body.appendChild(textarea);
       
       // Select and copy the text
+      textarea.focus(); // Must focus to select
       textarea.select();
       textarea.setSelectionRange(0, text.length); // For mobile devices
       
       const successful = document.execCommand('copy');
       document.body.removeChild(textarea);
+      
+      // CRITICAL: Restore focus to the terminal
+      if (previouslyFocused) {
+        previouslyFocused.focus();
+      }
       
       if (successful) {
         console.log('✅ Copied to clipboard (fallback):', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
@@ -380,6 +396,10 @@ export class SelectionManager {
       }
     } catch (err) {
       console.error('❌ Fallback copy failed:', err);
+      // Still try to restore focus even on error
+      if (previouslyFocused) {
+        previouslyFocused.focus();
+      }
     }
   }
   

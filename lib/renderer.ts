@@ -257,21 +257,24 @@ export class CanvasRenderer {
       }
     }
     
-    // Check if we have selection and need to redraw those lines
+    // Check if we need to redraw selection-related lines
+    // Only force redraws when actively selecting or clearing selection
     const hasSelection = this.selectionManager && this.selectionManager.hasSelection();
+    const isActivelySelecting = this.selectionManager && this.selectionManager.isActivelySelecting();
     const selectionRows = new Set<number>();
     
-    if (hasSelection) {
+    // Mark selection rows for redraw ONLY when actively selecting (mouse is down)
+    // This prevents slowdown when just typing with a static selection
+    if (hasSelection && isActivelySelecting) {
       const coords = this.selectionManager!.getSelectionCoords();
       if (coords) {
-        // Mark selection rows for redraw
         for (let row = coords.startRow; row <= coords.endRow; row++) {
           selectionRows.add(row);
         }
       }
     }
     
-    // Also mark previous selection rows for redraw (to clear old overlay)
+    // Always mark previous selection rows for redraw (to clear old overlay)
     if (this.selectionManager) {
       const prevCoords = this.selectionManager.getPreviousSelectionCoords();
       if (prevCoords) {
