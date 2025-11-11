@@ -415,8 +415,8 @@ export class KeyEncoder {
 /**
  * GhosttyTerminal - Wraps the WASM terminal emulator
  * 
- * This replaces the TypeScript ScreenBuffer and VTParser with
- * Ghostty's complete terminal implementation via WASM.
+ * Provides a TypeScript-friendly interface to Ghostty's complete
+ * terminal implementation via WASM.
  * 
  * @example
  * ```typescript
