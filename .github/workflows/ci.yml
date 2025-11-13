@@ -67,12 +67,9 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install Zig 0.15.2
-        run: |
-          curl -L -o zig.tar.xz https://ziglang.org/download/0.15.2/zig-linux-x86_64-0.15.2.tar.xz
-          tar xf zig.tar.xz
-          sudo mv zig-linux-x86_64-0.15.2 /usr/local/zig-0.15.2
-          sudo ln -s /usr/local/zig-0.15.2/zig /usr/local/bin/zig
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.15.2
 
       - name: Build WASM
         run: ./scripts/build-wasm.sh
@@ -95,12 +92,9 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install Zig 0.15.2
-        run: |
-          curl -L -o zig.tar.xz https://ziglang.org/download/0.15.2/zig-linux-x86_64-0.15.2.tar.xz
-          tar xf zig.tar.xz
-          sudo mv zig-linux-x86_64-0.15.2 /usr/local/zig-0.15.2
-          sudo ln -s /usr/local/zig-0.15.2/zig /usr/local/bin/zig
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.15.2
 
       - name: Build WASM
         run: ./scripts/build-wasm.sh
