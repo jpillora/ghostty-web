@@ -98,11 +98,10 @@ The library requires the `ghostty-vt.wasm` file at runtime. When installing from
 After cloning:
 
 ```bash
-git submodule update --init --recursive
 ./scripts/build-wasm.sh
 ```
 
-The WASM file is generated locally and gitignored.
+The script will automatically initialize the submodule if needed. The WASM file is generated locally and gitignored.
 
 ### Vite (Recommended)
 

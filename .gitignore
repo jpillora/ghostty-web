@@ -6,7 +6,3 @@ dist/
 
 # WASM build output (built locally and in CI)
 ghostty-vt.wasm
-
-# Ghostty submodule build artifacts
-ghostty/zig-out/
-ghostty/zig-cache/
