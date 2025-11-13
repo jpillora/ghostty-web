@@ -18,10 +18,8 @@ export type {
 } from './interfaces';
 
 // Ghostty WASM components (for advanced usage)
-export { Ghostty, GhosttyTerminal, SgrParser, KeyEncoder, CellFlags } from './ghostty';
+export { Ghostty, GhosttyTerminal, KeyEncoder, CellFlags, KeyEncoderOption } from './ghostty';
 export type {
-  SgrAttribute,
-  SgrAttributeTag,
   KeyEvent,
   KeyAction,
   Key,
