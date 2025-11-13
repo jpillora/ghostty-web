@@ -14,22 +14,11 @@ import {
   type KeyEvent,
   type KittyKeyFlags,
   type RGB,
-  type RGBColor,
-  type SgrAttribute,
-  SgrAttributeTag,
   type TerminalHandle,
 } from './types';
 
 // Re-export types for convenience
-export {
-  SgrAttributeTag,
-  type SgrAttribute,
-  type RGBColor,
-  type GhosttyCell,
-  type Cursor,
-  type RGB,
-  CellFlags,
-};
+export { type GhosttyCell, type Cursor, type RGB, CellFlags, KeyEncoderOption };
 
 /**
  * Main Ghostty WASM wrapper class
@@ -48,13 +37,6 @@ export class Ghostty {
    */
   private getBuffer(): ArrayBuffer {
     return this.memory.buffer;
-  }
-
-  /**
-   * Create an SGR parser instance
-   */
-  createSgrParser(): SgrParser {
-    return new SgrParser(this.exports);
   }
 
   /**
@@ -106,169 +88,6 @@ export class Ghostty {
     });
 
     return new Ghostty(wasmModule.instance);
-  }
-}
-
-/**
- * SGR (Select Graphic Rendition) Parser
- * Parses ANSI color/style sequences like "1;31" (bold red)
- */
-export class SgrParser {
-  private exports: GhosttyWasmExports;
-  private parser: number = 0;
-
-  constructor(exports: GhosttyWasmExports) {
-    this.exports = exports;
-
-    // Allocate parser
-    const parserPtrPtr = this.exports.ghostty_wasm_alloc_opaque();
-    const result = this.exports.ghostty_sgr_new(0, parserPtrPtr);
-    if (result !== 0) {
-      throw new Error(`Failed to create SGR parser: ${result}`);
-    }
-
-    // Read the parser pointer
-    const view = new DataView(this.exports.memory.buffer);
-    this.parser = view.getUint32(parserPtrPtr, true);
-    this.exports.ghostty_wasm_free_opaque(parserPtrPtr);
-  }
-
-  /**
-   * Parse SGR parameters (e.g., [1, 31] for bold red)
-   * @returns Iterator of SGR attributes
-   */
-  *parse(params: number[]): Generator<SgrAttribute> {
-    if (params.length === 0) return;
-
-    // Allocate parameter array
-    const paramsPtr = this.exports.ghostty_wasm_alloc_u16_array(params.length);
-    const view = new DataView(this.exports.memory.buffer);
-
-    // Write parameters (uint16_t array)
-    for (let i = 0; i < params.length; i++) {
-      view.setUint16(paramsPtr + i * 2, params[i], true);
-    }
-
-    // Set params in parser (null for subs, we don't use subparams yet)
-    const result = this.exports.ghostty_sgr_set_params(
-      this.parser,
-      paramsPtr,
-      0, // subsPtr - null
-      params.length
-    );
-
-    this.exports.ghostty_wasm_free_u16_array(paramsPtr, params.length);
-
-    if (result !== 0) {
-      throw new Error(`Failed to set SGR params: ${result}`);
-    }
-
-    // Iterate through attributes
-    const attrPtr = this.exports.ghostty_wasm_alloc_sgr_attribute();
-
-    try {
-      while (this.exports.ghostty_sgr_next(this.parser, attrPtr)) {
-        const attr = this.readAttribute(attrPtr);
-        if (attr) yield attr;
-      }
-    } finally {
-      this.exports.ghostty_wasm_free_sgr_attribute(attrPtr);
-    }
-  }
-
-  private readAttribute(attrPtr: number): SgrAttribute | null {
-    const tag = this.exports.ghostty_sgr_attribute_tag(attrPtr);
-    const view = new DataView(this.exports.memory.buffer);
-
-    switch (tag) {
-      case SgrAttributeTag.BOLD:
-        return { tag: SgrAttributeTag.BOLD };
-      case SgrAttributeTag.RESET_BOLD:
-        return { tag: SgrAttributeTag.RESET_BOLD };
-      case SgrAttributeTag.ITALIC:
-        return { tag: SgrAttributeTag.ITALIC };
-      case SgrAttributeTag.RESET_ITALIC:
-        return { tag: SgrAttributeTag.RESET_ITALIC };
-      case SgrAttributeTag.FAINT:
-        return { tag: SgrAttributeTag.FAINT };
-      case SgrAttributeTag.RESET_FAINT:
-        return { tag: SgrAttributeTag.RESET_FAINT };
-      case SgrAttributeTag.UNDERLINE:
-        return { tag: SgrAttributeTag.UNDERLINE };
-      case SgrAttributeTag.RESET_UNDERLINE:
-        return { tag: SgrAttributeTag.RESET_UNDERLINE };
-      case SgrAttributeTag.BLINK:
-        return { tag: SgrAttributeTag.BLINK };
-      case SgrAttributeTag.RESET_BLINK:
-        return { tag: SgrAttributeTag.RESET_BLINK };
-      case SgrAttributeTag.INVERSE:
-        return { tag: SgrAttributeTag.INVERSE };
-      case SgrAttributeTag.RESET_INVERSE:
-        return { tag: SgrAttributeTag.RESET_INVERSE };
-      case SgrAttributeTag.INVISIBLE:
-        return { tag: SgrAttributeTag.INVISIBLE };
-      case SgrAttributeTag.RESET_INVISIBLE:
-        return { tag: SgrAttributeTag.RESET_INVISIBLE };
-      case SgrAttributeTag.STRIKETHROUGH:
-        return { tag: SgrAttributeTag.STRIKETHROUGH };
-      case SgrAttributeTag.RESET_STRIKETHROUGH:
-        return { tag: SgrAttributeTag.RESET_STRIKETHROUGH };
-
-      case SgrAttributeTag.FG_8:
-      case SgrAttributeTag.FG_16:
-      case SgrAttributeTag.FG_256: {
-        // Color value is stored after the tag (uint8_t)
-        const color = view.getUint8(attrPtr + 4);
-        return { tag, color };
-      }
-
-      case SgrAttributeTag.FG_RGB:
-      case SgrAttributeTag.BG_RGB:
-      case SgrAttributeTag.UNDERLINE_COLOR_RGB: {
-        // RGB color stored after the tag (3 bytes: r, g, b)
-        const r = view.getUint8(attrPtr + 4);
-        const g = view.getUint8(attrPtr + 5);
-        const b = view.getUint8(attrPtr + 6);
-        return { tag, color: { r, g, b } };
-      }
-
-      case SgrAttributeTag.FG_DEFAULT:
-        return { tag: SgrAttributeTag.FG_DEFAULT };
-
-      case SgrAttributeTag.BG_8:
-      case SgrAttributeTag.BG_16:
-      case SgrAttributeTag.BG_256: {
-        const color = view.getUint8(attrPtr + 4);
-        return { tag, color };
-      }
-
-      case SgrAttributeTag.BG_DEFAULT:
-        return { tag: SgrAttributeTag.BG_DEFAULT };
-
-      case SgrAttributeTag.UNDERLINE_COLOR_DEFAULT:
-        return { tag: SgrAttributeTag.UNDERLINE_COLOR_DEFAULT };
-
-      default:
-        // Unknown or unhandled
-        return null;
-    }
-  }
-
-  /**
-   * Reset parser state
-   */
-  reset(): void {
-    this.exports.ghostty_sgr_reset(this.parser);
-  }
-
-  /**
-   * Free parser resources
-   */
-  dispose(): void {
-    if (this.parser) {
-      this.exports.ghostty_sgr_free(this.parser);
-      this.parser = 0;
-    }
   }
 }
 
