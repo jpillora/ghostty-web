@@ -270,7 +270,6 @@ export class InputHandler {
     // Allow Ctrl+V and Cmd+V to trigger paste event (don't preventDefault)
     if ((event.ctrlKey || event.metaKey) && event.code === 'KeyV') {
       // Let the browser's native paste event fire
-      console.log('[InputHandler] ⌨️  Ctrl/Cmd+V detected, allowing paste event');
       return;
     }
 
@@ -279,7 +278,6 @@ export class InputHandler {
     // Note: Ctrl+C on all platforms sends interrupt signal (0x03)
     if (event.metaKey && event.code === 'KeyC') {
       // Let browser/SelectionManager handle copy
-      console.log('[InputHandler] ⌨️  Cmd+C detected, allowing copy');
       return;
     }
 
@@ -458,11 +456,6 @@ export class InputHandler {
       console.warn('No text in clipboard');
       return;
     }
-
-    console.log(
-      '[InputHandler] 📋 Pasting text:',
-      text.substring(0, 50) + (text.length > 50 ? '...' : '')
-    );
 
     // Send the text to the terminal
     // Note: For bracketed paste mode, we would wrap this in \x1b[200~ ... \x1b[201~

@@ -52,7 +52,7 @@ export const DEFAULT_THEME: Required<ITheme> = {
   background: '#1e1e1e',
   cursor: '#ffffff',
   cursorAccent: '#1e1e1e',
-  selectionBackground: '#264f78',
+  selectionBackground: 'rgba(255, 255, 255, 0.3)',
   selectionForeground: '#d4d4d4',
   black: '#000000',
   red: '#cd3131',

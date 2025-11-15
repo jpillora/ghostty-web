@@ -202,7 +202,6 @@ export class SelectionManager {
     canvas.addEventListener('mousedown', (e: MouseEvent) => {
       if (e.button === 0) {
         // Left click only
-        console.log('[Selection] 🖱️  mousedown - starting selection');
 
         // CRITICAL: Focus the terminal so it can receive keyboard input
         // The canvas doesn't have tabindex, but the parent container does
@@ -222,7 +221,6 @@ export class SelectionManager {
         this.selectionStart = cell;
         this.selectionEnd = cell;
         this.isSelecting = true;
-        console.log('[Selection] ✅ isSelecting = true');
       }
     });
 
@@ -238,7 +236,6 @@ export class SelectionManager {
     // Mouse leave - stop selecting if mouse leaves canvas while dragging
     canvas.addEventListener('mouseleave', (e: MouseEvent) => {
       if (this.isSelecting) {
-        console.log('[Selection] ⚠️  mouseleave while selecting - but keeping selection active');
         // DON'T clear isSelecting here - allow dragging outside canvas
         // The document mouseup handler will catch the release
       }
@@ -248,9 +245,7 @@ export class SelectionManager {
     // This catches mouseup events that happen outside the canvas (common during drag)
     this.boundMouseUpHandler = (e: MouseEvent) => {
       if (this.isSelecting) {
-        console.log('[Selection] 🖱️  mouseup - stopping selection');
         this.isSelecting = false;
-        console.log('[Selection] ✅ isSelecting = false');
 
         const text = this.getSelection();
         if (text) {
@@ -287,7 +282,6 @@ export class SelectionManager {
         const text = this.getSelection();
         if (text) {
           this.copyToClipboard(text);
-          console.log('Copied selection to clipboard (via right-click)');
         }
       }
     });
@@ -370,10 +364,7 @@ export class SelectionManager {
       navigator.clipboard
         .writeText(text)
         .then(() => {
-          console.log(
-            '✅ Copied to clipboard (Clipboard API):',
-            text.substring(0, 50) + (text.length > 50 ? '...' : '')
-          );
+          // Successfully copied
         })
         .catch((err) => {
           console.error('❌ Clipboard API failed:', err);
@@ -382,7 +373,6 @@ export class SelectionManager {
         });
     } else {
       // Fallback to execCommand for non-secure contexts (like mux.coder)
-      console.log('💡 Using fallback copy method (Clipboard API requires HTTPS)');
       this.copyToClipboardFallback(text);
     }
   }
@@ -416,12 +406,7 @@ export class SelectionManager {
         previouslyFocused.focus();
       }
 
-      if (successful) {
-        console.log(
-          '✅ Copied to clipboard (fallback):',
-          text.substring(0, 50) + (text.length > 50 ? '...' : '')
-        );
-      } else {
+      if (!successful) {
         console.error('❌ Copy failed (both methods)');
       }
     } catch (err) {

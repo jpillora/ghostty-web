@@ -44,7 +44,7 @@ describe('CanvasRenderer', () => {
     });
 
     test('has selection colors', () => {
-      expect(DEFAULT_THEME.selectionBackground).toBe('#264f78');
+      expect(DEFAULT_THEME.selectionBackground).toBe('rgba(255, 255, 255, 0.3)');
       expect(DEFAULT_THEME.selectionForeground).toBe('#d4d4d4');
     });
   });
