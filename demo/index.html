@@ -301,6 +301,23 @@
         </div>
       </div>
 
+      <div class="feature-panel">
+        <h3>🔍 Buffer Access API (NEW!)</h3>
+        <div class="button-grid">
+          <button class="test-button" id="btn-testAlternateScreen">🔄 Test Alternate Screen</button>
+          <button class="test-button" id="btn-testWrapping">📏 Test Line Wrapping</button>
+          <button class="test-button" id="btn-testEdgeCases">⚠️ Test Edge Cases</button>
+          <button class="test-button" id="btn-showBufferInfo">ℹ️ Show Buffer Info</button>
+        </div>
+        <div>
+          <strong style="display: block; margin-bottom: 8px">API Test Results:</strong>
+          <div class="event-log" id="buffer-api-log">
+            <div style="opacity: 0.5; text-align: center">Test results will appear here...</div>
+          </div>
+          <button class="clear-log" id="btn-clear-buffer-log">Clear Results</button>
+        </div>
+      </div>
+
       <div class="warning">
         <strong>⚠️ Warning: Full Filesystem Access</strong>
         This demo has unrestricted access to your entire filesystem. It's meant for local
@@ -692,6 +709,167 @@
           }, 100);
         });
 
+        // =========================================================================
+        // Buffer Access API Handlers (NEW!)
+        // =========================================================================
+
+        function logBufferEvent(message, isSuccess = true) {
+          const bufferLog = document.getElementById('buffer-api-log');
+          const eventDiv = document.createElement('div');
+          eventDiv.className = 'event';
+          eventDiv.innerHTML = `
+            <span class="event-type" style="color: ${isSuccess ? '#4caf50' : '#ff9800'}">${isSuccess ? '✓' : '→'}</span>
+            <span class="event-data">${message}</span>
+          `;
+          bufferLog.appendChild(eventDiv);
+          bufferLog.scrollTop = bufferLog.scrollHeight;
+        }
+
+        document.getElementById('btn-clear-buffer-log').addEventListener('click', () => {
+          const bufferLog = document.getElementById('buffer-api-log');
+          bufferLog.innerHTML =
+            '<div style="opacity: 0.5; text-align: center">Test results will appear here...</div>';
+        });
+
+        document.getElementById('btn-testAlternateScreen').addEventListener('click', async () => {
+          const bufferLog = document.getElementById('buffer-api-log');
+          bufferLog.innerHTML = ''; // Clear log
+
+          logBufferEvent('Testing alternate screen detection...', false);
+
+          // Check initial state
+          const initial = term.wasmTerm?.isAlternateScreen();
+          logBufferEvent(
+            `Initial (normal mode): ${initial === false ? '✓ PASS' : '✗ FAIL'} (${initial})`
+          );
+
+          // Enter alternate screen
+          term.write('\x1b[?1049h');
+          term.write('\x1b[2J\x1b[H'); // Clear and home
+          term.write('\x1b[1;32m╔════════════════════════════════════════╗\r\n');
+          term.write('║     ALTERNATE SCREEN MODE ACTIVE       ║\r\n');
+          term.write('║     (Like vim/less/htop)               ║\r\n');
+          term.write('║                                        ║\r\n');
+          term.write('║     Normal buffer is preserved!        ║\r\n');
+          term.write('║     Exiting in 3 seconds...            ║\r\n');
+          term.write('╚════════════════════════════════════════╝\x1b[0m\r\n');
+
+          const inAlt = term.wasmTerm?.isAlternateScreen();
+          logBufferEvent(`In alternate mode: ${inAlt === true ? '✓ PASS' : '✗ FAIL'} (${inAlt})`);
+
+          // Exit after delay
+          await new Promise((r) => setTimeout(r, 3000));
+          term.write('\x1b[?1049l');
+
+          const afterExit = term.wasmTerm?.isAlternateScreen();
+          logBufferEvent(
+            `After exit (normal mode): ${afterExit === false ? '✓ PASS' : '✗ FAIL'} (${afterExit})`
+          );
+
+          if (initial === false && inAlt === true && afterExit === false) {
+            logBufferEvent('🎉 All alternate screen tests PASSED!', true);
+          }
+        });
+
+        document.getElementById('btn-testWrapping').addEventListener('click', () => {
+          const bufferLog = document.getElementById('buffer-api-log');
+          bufferLog.innerHTML = ''; // Clear log
+
+          logBufferEvent('Testing line wrapping detection...', false);
+
+          term.write('\x1b[2J\x1b[H'); // Clear screen
+
+          // Write short lines (no wrap)
+          term.write('Short line 1\r\n');
+          term.write('Short line 2\r\n');
+
+          const row0 = term.wasmTerm?.isRowWrapped(0);
+          const row1 = term.wasmTerm?.isRowWrapped(1);
+          logBufferEvent(
+            `Row 0 (short line): ${row0 === false ? '✓ PASS' : '✗ FAIL'} (wrapped=${row0})`
+          );
+          logBufferEvent(
+            `Row 1 (short line): ${row1 === false ? '✓ PASS' : '✗ FAIL'} (wrapped=${row1})`
+          );
+
+          // Write long line that wraps
+          term.write(
+            '\x1b[33mThis is a very long line that will definitely wrap to the next line because it is much longer than the terminal width allows for a single line of text!\x1b[0m\r\n'
+          );
+
+          // Check wrapping (row 2 starts long line, row 3+ are continuations)
+          const results = [];
+          for (let i = 2; i < 6; i++) {
+            const wrapped = term.wasmTerm?.isRowWrapped(i);
+            results.push({ row: i, wrapped });
+            logBufferEvent(
+              `Row ${i}: ${wrapped ? 'WRAPPED ↪' : 'NEW LINE ↓'} (wrapped=${wrapped})`
+            );
+          }
+
+          const row2correct = results[0].wrapped === false; // Start of line
+          const row3correct = results[1].wrapped === true; // Continuation
+
+          if (row0 === false && row1 === false && row2correct && row3correct) {
+            logBufferEvent('🎉 Line wrapping tests PASSED!', true);
+          }
+        });
+
+        document.getElementById('btn-testEdgeCases').addEventListener('click', () => {
+          const bufferLog = document.getElementById('buffer-api-log');
+          bufferLog.innerHTML = ''; // Clear log
+
+          logBufferEvent('Testing edge cases...', false);
+
+          // Row 0 can never be wrapped
+          const row0 = term.wasmTerm?.isRowWrapped(0);
+          logBufferEvent(`Row 0 (never wraps): ${row0 === false ? '✓ PASS' : '✗ FAIL'} (${row0})`);
+
+          // Negative row
+          const negRow = term.wasmTerm?.isRowWrapped(-1);
+          logBufferEvent(`Row -1 (invalid): ${negRow === false ? '✓ PASS' : '✗ FAIL'} (${negRow})`);
+
+          // Out of bounds
+          const largeRow = term.wasmTerm?.isRowWrapped(9999);
+          logBufferEvent(
+            `Row 9999 (out of bounds): ${largeRow === false ? '✓ PASS' : '✗ FAIL'} (${largeRow})`
+          );
+
+          if (row0 === false && negRow === false && largeRow === false) {
+            logBufferEvent('🎉 All edge case tests PASSED!', true);
+          }
+        });
+
+        document.getElementById('btn-showBufferInfo').addEventListener('click', () => {
+          const bufferLog = document.getElementById('buffer-api-log');
+          bufferLog.innerHTML = ''; // Clear log
+
+          logBufferEvent('📊 Current Buffer Information:', false);
+
+          const isAlt = term.wasmTerm?.isAlternateScreen();
+          const mode = isAlt
+            ? 'Alternate Screen (vim/less/htop mode)'
+            : 'Normal Screen (shell mode)';
+          logBufferEvent(`Screen Mode: ${mode}`, true);
+
+          logBufferEvent(`Terminal Size: ${term.cols}x${term.rows}`, true);
+
+          // Check wrapping for visible rows
+          let wrappedCount = 0;
+          for (let i = 0; i < term.rows; i++) {
+            if (term.wasmTerm?.isRowWrapped(i)) {
+              wrappedCount++;
+            }
+          }
+          logBufferEvent(`Wrapped Rows: ${wrappedCount}/${term.rows} visible rows`, true);
+
+          // Show first 10 rows wrap status
+          logBufferEvent('First 10 rows wrap status:', false);
+          for (let i = 0; i < Math.min(10, term.rows); i++) {
+            const wrapped = term.wasmTerm?.isRowWrapped(i);
+            logBufferEvent(`  Row ${i}: ${wrapped ? '↪ wrapped' : '↓ new line'}`, true);
+          }
+        });
         // Expose terminal to console for debugging
         window.term = term;
       }
