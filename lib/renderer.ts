@@ -111,8 +111,12 @@ export class CanvasRenderer {
   // Regex link hover tracking (for links without hyperlink_id)
   private hoveredLinkRange: { startX: number; startY: number; endX: number; endY: number } | null =
     null;
-  private previousHoveredLinkRange: { startX: number; startY: number; endX: number; endY: number } | null =
-    null;
+  private previousHoveredLinkRange: {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null = null;
 
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.canvas = canvas;
@@ -364,7 +368,11 @@ export class CanvasRenderer {
     if (linkRangeChanged) {
       // Add rows from old range
       if (this.previousHoveredLinkRange) {
-        for (let y = this.previousHoveredLinkRange.startY; y <= this.previousHoveredLinkRange.endY; y++) {
+        for (
+          let y = this.previousHoveredLinkRange.startY;
+          y <= this.previousHoveredLinkRange.endY;
+          y++
+        ) {
           hyperlinkRows.add(y);
         }
       }
@@ -782,12 +790,14 @@ export class CanvasRenderer {
    * Set the currently hovered link range for rendering underlines (for regex-detected URLs)
    * Pass null to clear the hover state
    */
-  public setHoveredLinkRange(range: {
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-  } | null): void {
+  public setHoveredLinkRange(
+    range: {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    } | null
+  ): void {
     this.hoveredLinkRange = range;
   }
 
