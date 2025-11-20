@@ -183,7 +183,7 @@ const HTML_TEMPLATE = `<!doctype html>
       }
 
       function connectWebSocket() {
-        const wsUrl = \`ws://\${location.hostname}:${PORT}/ws?cols=\${term.cols}&rows=\${term.rows}\`;
+        const wsUrl = \`ws://\${location.hostname}:8080/ws?cols=\${term.cols}&rows=\${term.rows}\`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
