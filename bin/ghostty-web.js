@@ -7,14 +7,14 @@
  * Run with: npx ghostty-web
  */
 
-import http from 'http';
+import { spawn } from 'child_process';
+import { exec } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
+import http from 'http';
+import { homedir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
-import { homedir } from 'os';
-import { exec } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -398,13 +398,14 @@ class MinimalWebSocket {
   }
 
   emit(event, data) {
-    (this.listeners[event] || []).forEach((h) => {
+    const handlers = this.listeners[event] || [];
+    for (const h of handlers) {
       try {
         h(data);
       } catch (err) {
         console.error('WebSocket event handler error:', err);
       }
-    });
+    }
   }
 }
 
@@ -414,8 +415,8 @@ class MinimalWebSocket {
 
 function handlePTYSession(ws, req) {
   const url = new URL(req.url, 'http://localhost');
-  const cols = parseInt(url.searchParams.get('cols')) || 80;
-  const rows = parseInt(url.searchParams.get('rows')) || 24;
+  const cols = Number.parseInt(url.searchParams.get('cols')) || 80;
+  const rows = Number.parseInt(url.searchParams.get('rows')) || 24;
 
   const shell = process.env.SHELL || '/bin/bash';
 
@@ -442,12 +443,12 @@ function handlePTYSession(ws, req) {
   ptyProcess.stdout.on('data', (data) => {
     try {
       let str = data.toString();
-      
+
       // Filter out OSC sequences that cause artifacts (same as demo/server)
       str = str.replace(/\x1b\]0;[^\x07]*\x07/g, ''); // OSC 0 - icon + title
       str = str.replace(/\x1b\]1;[^\x07]*\x07/g, ''); // OSC 1 - icon
       str = str.replace(/\x1b\]2;[^\x07]*\x07/g, ''); // OSC 2 - title
-      
+
       ws.send(str);
     } catch (err) {
       // WebSocket may be closed
@@ -477,7 +478,7 @@ function handlePTYSession(ws, req) {
     } catch {
       // Not JSON, will be treated as input below
     }
-    
+
     // Treat as terminal input
     try {
       ptyProcess.stdin.write(data);
@@ -615,13 +616,13 @@ function cleanup() {
   console.log('\n\n👋 Shutting down...');
 
   // Close all active WebSocket connections
-  activeSessions.forEach((socket) => {
+  for (const socket of activeSessions) {
     try {
       socket.end();
     } catch (err) {
       // Ignore errors during cleanup
     }
-  });
+  }
 
   server.close(() => {
     console.log('✓ Server closed');
