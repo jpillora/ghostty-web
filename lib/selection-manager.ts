@@ -38,9 +38,10 @@ export class SelectionManager {
   private wasmTerm: GhosttyTerminal;
   private textarea: HTMLTextAreaElement;
 
-  // Selection state
-  private selectionStart: { col: number; row: number } | null = null;
-  private selectionEnd: { col: number; row: number } | null = null;
+  // Selection state - coordinates are in ABSOLUTE buffer space (viewportY + viewportRow)
+  // This ensures selection persists correctly when scrolling
+  private selectionStart: { col: number; absoluteRow: number } | null = null;
+  private selectionEnd: { col: number; absoluteRow: number } | null = null;
   private isSelecting: boolean = false;
   private mouseDownTarget: EventTarget | null = null; // Track where mousedown occurred
 
@@ -62,6 +63,31 @@ export class SelectionManager {
   private autoScrollInterval: ReturnType<typeof setInterval> | null = null;
   private autoScrollDirection: number = 0; // -1 = up, 0 = none, 1 = down
   private static readonly AUTO_SCROLL_EDGE_SIZE = 30; // pixels from edge to trigger scroll
+
+  /**
+   * Get current viewport Y position (how many lines scrolled into history)
+   */
+  private getViewportY(): number {
+    const rawViewportY =
+      typeof (this.terminal as any).getViewportY === 'function'
+        ? (this.terminal as any).getViewportY()
+        : (this.terminal as any).viewportY || 0;
+    return Math.max(0, Math.floor(rawViewportY));
+  }
+
+  /**
+   * Convert viewport row to absolute buffer row
+   */
+  private viewportRowToAbsolute(viewportRow: number): number {
+    return this.getViewportY() + viewportRow;
+  }
+
+  /**
+   * Convert absolute buffer row to viewport row (may be outside visible range)
+   */
+  private absoluteRowToViewport(absoluteRow: number): number {
+    return absoluteRow - this.getViewportY();
+  }
   private static readonly AUTO_SCROLL_SPEED = 3; // lines per interval
   private static readonly AUTO_SCROLL_INTERVAL = 50; // ms between scroll steps
 
@@ -177,7 +203,7 @@ export class SelectionManager {
     // Check if start and end are the same (single cell, no real selection)
     return !(
       this.selectionStart.col === this.selectionEnd.col &&
-      this.selectionStart.row === this.selectionEnd.row
+      this.selectionStart.absoluteRow === this.selectionEnd.absoluteRow
     );
   }
 
@@ -208,8 +234,9 @@ export class SelectionManager {
    */
   selectAll(): void {
     const dims = this.wasmTerm.getDimensions();
-    this.selectionStart = { col: 0, row: 0 };
-    this.selectionEnd = { col: dims.cols - 1, row: dims.rows - 1 };
+    const viewportY = this.getViewportY();
+    this.selectionStart = { col: 0, absoluteRow: viewportY };
+    this.selectionEnd = { col: dims.cols - 1, absoluteRow: viewportY + dims.rows - 1 };
     this.requestRender();
     this.selectionChangedEmitter.fire();
   }
@@ -237,8 +264,10 @@ export class SelectionManager {
     // Clamp end row
     endRow = Math.min(endRow, dims.rows - 1);
 
-    this.selectionStart = { col: column, row };
-    this.selectionEnd = { col: endCol, row: endRow };
+    // Convert viewport rows to absolute rows
+    const viewportY = this.getViewportY();
+    this.selectionStart = { col: column, absoluteRow: viewportY + row };
+    this.selectionEnd = { col: endCol, absoluteRow: viewportY + endRow };
     this.requestRender();
     this.selectionChangedEmitter.fire();
   }
@@ -259,8 +288,10 @@ export class SelectionManager {
       [start, end] = [end, start];
     }
 
-    this.selectionStart = { col: 0, row: start };
-    this.selectionEnd = { col: dims.cols - 1, row: end };
+    // Convert viewport rows to absolute rows
+    const viewportY = this.getViewportY();
+    this.selectionStart = { col: 0, absoluteRow: viewportY + start };
+    this.selectionEnd = { col: dims.cols - 1, absoluteRow: viewportY + end };
     this.requestRender();
     this.selectionChangedEmitter.fire();
   }
@@ -394,9 +425,10 @@ export class SelectionManager {
           this.clearSelection();
         }
 
-        // Start new selection
-        this.selectionStart = cell;
-        this.selectionEnd = cell;
+        // Start new selection (convert to absolute coordinates)
+        const absoluteRow = this.viewportRowToAbsolute(cell.row);
+        this.selectionStart = { col: cell.col, absoluteRow };
+        this.selectionEnd = { col: cell.col, absoluteRow };
         this.isSelecting = true;
       }
     });
@@ -408,7 +440,8 @@ export class SelectionManager {
         this.markCurrentSelectionDirty();
 
         const cell = this.pixelToCell(e.offsetX, e.offsetY);
-        this.selectionEnd = cell;
+        const absoluteRow = this.viewportRowToAbsolute(cell.row);
+        this.selectionEnd = { col: cell.col, absoluteRow };
         this.requestRender();
 
         // Check if near edges for auto-scroll
@@ -460,7 +493,8 @@ export class SelectionManager {
           this.markCurrentSelectionDirty();
 
           const cell = this.pixelToCell(offsetX, offsetY);
-          this.selectionEnd = cell;
+          const absoluteRow = this.viewportRowToAbsolute(cell.row);
+          this.selectionEnd = { col: cell.col, absoluteRow };
           this.requestRender();
 
           // Update auto-scroll direction based on mouse position
@@ -503,8 +537,9 @@ export class SelectionManager {
       const word = this.getWordAtCell(cell.col, cell.row);
 
       if (word) {
-        this.selectionStart = { col: word.startCol, row: cell.row };
-        this.selectionEnd = { col: word.endCol, row: cell.row };
+        const absoluteRow = this.viewportRowToAbsolute(cell.row);
+        this.selectionStart = { col: word.startCol, absoluteRow };
+        this.selectionEnd = { col: word.endCol, absoluteRow };
         this.requestRender();
 
         const text = this.getSelection();
@@ -666,16 +701,18 @@ export class SelectionManager {
       (this.terminal as any).scrollLines(scrollAmount);
 
       // Update selection end to extend with scroll
-      // When scrolling up (direction=-1), extend selection to top row
-      // When scrolling down (direction=1), extend selection to bottom row
+      // When scrolling up (direction=-1), extend selection to top of viewport
+      // When scrolling down (direction=1), extend selection to bottom of viewport
+      // Use absolute coordinates so selection persists across scroll
       if (this.selectionEnd) {
         const dims = this.wasmTerm.getDimensions();
+        const viewportY = this.getViewportY();
         if (this.autoScrollDirection < 0) {
-          // Scrolling up - extend selection to top
-          this.selectionEnd = { col: 0, row: 0 };
+          // Scrolling up - extend selection to top of current viewport
+          this.selectionEnd = { col: 0, absoluteRow: viewportY };
         } else {
-          // Scrolling down - extend selection to bottom
-          this.selectionEnd = { col: dims.cols - 1, row: dims.rows - 1 };
+          // Scrolling down - extend selection to bottom of current viewport
+          this.selectionEnd = { col: dims.cols - 1, absoluteRow: viewportY + dims.rows - 1 };
         }
       }
 
@@ -712,18 +749,23 @@ export class SelectionManager {
 
   /**
    * Normalize selection coordinates (handle backward selection)
+   * Returns coordinates in VIEWPORT space for rendering
    */
   private normalizeSelection(): SelectionCoordinates | null {
     if (!this.selectionStart || !this.selectionEnd) return null;
 
-    let { col: startCol, row: startRow } = this.selectionStart;
-    let { col: endCol, row: endRow } = this.selectionEnd;
+    let { col: startCol, absoluteRow: startAbsRow } = this.selectionStart;
+    let { col: endCol, absoluteRow: endAbsRow } = this.selectionEnd;
 
     // Swap if selection goes backwards
-    if (startRow > endRow || (startRow === endRow && startCol > endCol)) {
+    if (startAbsRow > endAbsRow || (startAbsRow === endAbsRow && startCol > endCol)) {
       [startCol, endCol] = [endCol, startCol];
-      [startRow, endRow] = [endRow, startRow];
+      [startAbsRow, endAbsRow] = [endAbsRow, startAbsRow];
     }
+
+    // Convert to viewport coordinates
+    const startRow = this.absoluteRowToViewport(startAbsRow);
+    const endRow = this.absoluteRowToViewport(endAbsRow);
 
     return { startCol, startRow, endCol, endRow };
   }
