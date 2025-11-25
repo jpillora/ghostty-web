@@ -77,16 +77,21 @@ export class SelectionManager {
 
   /**
    * Convert viewport row to absolute buffer row
+   * Absolute row is an index into combined buffer: scrollback (0 to len-1) + screen (len to len+rows-1)
    */
   private viewportRowToAbsolute(viewportRow: number): number {
-    return this.getViewportY() + viewportRow;
+    const scrollbackLength = this.wasmTerm.getScrollbackLength();
+    const viewportY = this.getViewportY();
+    return scrollbackLength + viewportRow - viewportY;
   }
 
   /**
    * Convert absolute buffer row to viewport row (may be outside visible range)
    */
   private absoluteRowToViewport(absoluteRow: number): number {
-    return absoluteRow - this.getViewportY();
+    const scrollbackLength = this.wasmTerm.getScrollbackLength();
+    const viewportY = this.getViewportY();
+    return absoluteRow - scrollbackLength + viewportY;
   }
   private static readonly AUTO_SCROLL_SPEED = 3; // lines per interval
   private static readonly AUTO_SCROLL_INTERVAL = 50; // ms between scroll steps
