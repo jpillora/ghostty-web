@@ -42,7 +42,7 @@ export class SelectionManager {
   private selectionStart: { col: number; row: number } | null = null;
   private selectionEnd: { col: number; row: number } | null = null;
   private isSelecting: boolean = false;
-  private justFinishedSelecting: boolean = false; // Brief flag to prevent click from clearing selection
+  private mouseDownTarget: EventTarget | null = null; // Track where mousedown occurred
 
   // Track rows that need redraw for clearing old selection
   // Using a Set prevents the overwrite bug where mousemove would clobber
@@ -476,19 +476,17 @@ export class SelectionManager {
     };
     document.addEventListener('mousemove', this.boundDocumentMouseMoveHandler);
 
+    // Track mousedown on document to know if a click started inside the canvas
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      this.mouseDownTarget = e.target;
+    });
+
     // CRITICAL FIX: Listen for mouseup on DOCUMENT, not just canvas
     // This catches mouseup events that happen outside the canvas (common during drag)
     this.boundMouseUpHandler = (e: MouseEvent) => {
       if (this.isSelecting) {
         this.isSelecting = false;
         this.stopAutoScroll();
-
-        // Set a brief flag to prevent the click handler from immediately clearing
-        // the selection (click events fire shortly after mouseup)
-        this.justFinishedSelecting = true;
-        setTimeout(() => {
-          this.justFinishedSelecting = false;
-        }, 100);
 
         const text = this.getSelection();
         if (text) {
@@ -582,9 +580,17 @@ export class SelectionManager {
     // Click outside canvas - clear selection
     // This allows users to deselect by clicking anywhere outside the terminal
     this.boundClickHandler = (e: MouseEvent) => {
-      // Don't clear selection if we're actively selecting or just finished
-      // (click events can fire shortly after mouseup from drag selection)
-      if (this.isSelecting || this.justFinishedSelecting) {
+      // Don't clear selection if we're actively selecting
+      if (this.isSelecting) {
+        return;
+      }
+
+      // A click is only valid for clearing selection if BOTH mousedown and mouseup
+      // happened outside the canvas. If mousedown was inside (drag selection),
+      // don't clear even if mouseup/click is outside.
+      const mouseDownWasInCanvas =
+        this.mouseDownTarget && canvas.contains(this.mouseDownTarget as Node);
+      if (mouseDownWasInCanvas) {
         return;
       }
 
