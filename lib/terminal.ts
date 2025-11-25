@@ -456,10 +456,9 @@ export class Terminal implements ITerminalCore {
    * Internal write implementation (extracted from write())
    */
   private writeInternal(data: string | Uint8Array, callback?: () => void): void {
-    // Clear selection when writing new data (standard terminal behavior)
-    if (this.selectionManager?.hasSelection()) {
-      this.selectionManager.clearSelection();
-    }
+    // Note: We intentionally do NOT clear selection on write - most modern terminals
+    // preserve selection when new data arrives. Selection is cleared by user actions
+    // like clicking or typing, not by incoming data.
 
     // Write directly to WASM terminal (handles VT parsing internally)
     this.wasmTerm!.write(data);

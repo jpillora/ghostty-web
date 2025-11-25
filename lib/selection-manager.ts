@@ -638,9 +638,12 @@ export class SelectionManager {
         return;
       }
 
-      // Scroll the terminal
+      // Scroll the terminal to reveal more content in the direction user is dragging
+      // autoScrollDirection: -1 = dragging up (wants to see history), 1 = dragging down (wants to see newer)
+      // scrollLines convention: negative = scroll up into history, positive = scroll down to newer
+      // So direction maps directly to scrollLines sign
       const scrollAmount = SelectionManager.AUTO_SCROLL_SPEED * this.autoScrollDirection;
-      (this.terminal as any).scrollLines(-scrollAmount); // Negative because scrollLines convention
+      (this.terminal as any).scrollLines(scrollAmount);
 
       // Update selection end to extend with scroll
       // When scrolling up (direction=-1), extend selection to top row
