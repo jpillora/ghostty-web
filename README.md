@@ -9,7 +9,16 @@ cases it is a drop-in replacement for xterm.js.
 
 ## Live Demo
 
-You can try ghostty-web yourself:
+Try ghostty-web instantly with:
+
+```bash
+npx @ghostty-web/demo
+```
+
+This starts a local demo server with a real shell session. Works on Linux, macOS, and Windows.
+
+<details>
+<summary>Development setup (building from source)</summary>
 
 > [!NOTE]
 > Requires Zig and Bun, see [Development](#development)
@@ -21,13 +30,15 @@ bun install
 bun run build # Builds the WASM module and library
 
 # Terminal 1: Start PTY Server
-cd demo/server
+cd demo
 bun install
-bun run start
+bun run dev
 
 # Terminal 2: Start web server
-bun dev # http://localhost:8000/demo/
+bun run dev # http://localhost:8000/demo/
 ```
+
+</details>
 
 ## Getting Started
 

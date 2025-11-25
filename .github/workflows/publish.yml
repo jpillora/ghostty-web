@@ -168,3 +168,74 @@ jobs:
         if: steps.check-exists.outputs.exists == 'true' && steps.detect.outputs.is_tag != 'true'
         run: |
           echo "⏭️ Pre-release version already exists, skipping"
+
+  publish-demo:
+    name: publish @ghostty-web/demo to npm
+    runs-on: ubuntu-latest
+    needs: publish
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js for npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm install -g npm@latest
+
+      - name: Detect trigger type
+        id: detect
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+            echo "trigger_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+            echo "trigger_name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate demo version
+        id: version
+        working-directory: demo
+        run: |
+          BASE_VERSION=$(jq -r .version package.json)
+
+          if [[ "${{ steps.detect.outputs.is_tag }}" == "true" ]]; then
+            NPM_VERSION="${BASE_VERSION}"
+            NPM_TAG="latest"
+          else
+            GIT_COMMIT=$(git rev-parse --short HEAD)
+            COMMITS_SINCE_TAG=$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD) 2>/dev/null || echo "0")
+            NPM_VERSION="${BASE_VERSION}-next.${COMMITS_SINCE_TAG}.g${GIT_COMMIT}"
+            NPM_TAG="next"
+          fi
+
+          echo "version=${NPM_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${NPM_TAG}" >> $GITHUB_OUTPUT
+
+          node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync('package.json')); pkg.version = '${NPM_VERSION}'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+          echo "Updated demo/server/package.json to version ${NPM_VERSION}"
+
+      - name: Check if demo version exists
+        id: check-exists
+        working-directory: demo
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if npm view "${PACKAGE_NAME}@${VERSION}" version &>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish demo to npm
+        if: steps.check-exists.outputs.exists == 'false'
+        working-directory: demo
+        run: npm publish --tag ${{ steps.version.outputs.tag }} --provenance --access public

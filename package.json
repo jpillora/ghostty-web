@@ -6,9 +6,6 @@
   "main": "./dist/ghostty-web.umd.cjs",
   "module": "./dist/ghostty-web.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "ghostty-web": "./bin/ghostty-web.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,7 +17,6 @@
   "files": [
     "dist",
     "ghostty-vt.wasm",
-    "bin",
     "README.md"
   ],
   "keywords": [
