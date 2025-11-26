@@ -171,19 +171,22 @@ const HTML_TEMPLATE = `<!doctype html>
       }
 
       .terminal-content {
-        padding: 0;
-        min-height: 400px;
-        height: 60vh;
+        height: 600px;
+        padding: 16px;
+        background: #1e1e1e;
         position: relative;
+        overflow: hidden;
       }
 
-      #terminal {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        overflow: hidden;
+      /* Ensure terminal canvas can handle scrolling */
+      .terminal-content canvas {
+        display: block;
+      }
+
+      @media (max-width: 768px) {
+        .terminal-content {
+          height: 500px;
+        }
       }
     </style>
   </head>
@@ -195,15 +198,13 @@ const HTML_TEMPLATE = `<!doctype html>
           <div class="light yellow"></div>
           <div class="light green"></div>
         </div>
-        <span class="title">ghostty-web — shell</span>
+        <span class="title">ghostty-web</span>
         <div class="connection-status">
           <div class="status-dot connecting" id="status-dot"></div>
           <span id="status-text">Connecting...</span>
         </div>
       </div>
-      <div class="terminal-content">
-        <div id="terminal"></div>
-      </div>
+      <div class="terminal-content" id="terminal"></div>
     </div>
 
     <script type="module">
