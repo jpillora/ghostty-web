@@ -36,7 +36,6 @@ import { OSC8LinkProvider } from './providers/osc8-link-provider';
 import { UrlRegexProvider } from './providers/url-regex-provider';
 import { CanvasRenderer } from './renderer';
 import { SelectionManager } from './selection-manager';
-import type { GhosttyTerminalConfig } from './types';
 import type { ILink, ILinkProvider } from './types';
 
 // ============================================================================
@@ -113,7 +112,7 @@ export class Terminal implements ITerminalCore {
   private currentTitle: string = '';
 
   // Phase 2: Viewport and scrolling state
-  private viewportY: number = 0; // Top line of viewport in scrollback buffer (0 = at bottom, can be fractional during smooth scroll)
+  public viewportY: number = 0; // Top line of viewport in scrollback buffer (0 = at bottom, can be fractional during smooth scroll)
   private targetViewportY: number = 0; // Target viewport position for smooth scrolling
   private scrollAnimationStartTime?: number;
   private scrollAnimationStartY?: number;
@@ -173,82 +172,6 @@ export class Terminal implements ITerminalCore {
 
     // Initialize buffer API
     this.buffer = new BufferNamespace(this);
-  }
-
-  // ==========================================================================
-  // Theme to WASM Config Conversion
-  // ==========================================================================
-
-  /**
-   * Parse a CSS color string to 0xRRGGBB format.
-   * Returns 0 if the color is undefined or invalid.
-   */
-  private parseColorToHex(color?: string): number {
-    if (!color) return 0;
-
-    // Handle hex colors (#RGB, #RRGGBB)
-    if (color.startsWith('#')) {
-      let hex = color.slice(1);
-      if (hex.length === 3) {
-        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-      }
-      const value = Number.parseInt(hex, 16);
-      return Number.isNaN(value) ? 0 : value;
-    }
-
-    // Handle rgb(r, g, b) format
-    const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-    if (match) {
-      const r = Number.parseInt(match[1], 10);
-      const g = Number.parseInt(match[2], 10);
-      const b = Number.parseInt(match[3], 10);
-      return (r << 16) | (g << 8) | b;
-    }
-
-    return 0;
-  }
-
-  /**
-   * Convert terminal options to WASM terminal config.
-   */
-  private buildWasmConfig(): GhosttyTerminalConfig | undefined {
-    const theme = this.options.theme;
-    const scrollback = this.options.scrollback;
-
-    // If no theme and default scrollback, use defaults
-    if (!theme && scrollback === 1000) {
-      return undefined;
-    }
-
-    // Build palette array from theme colors
-    // Order: black, red, green, yellow, blue, magenta, cyan, white,
-    //        brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
-    const palette: number[] = [
-      this.parseColorToHex(theme?.black),
-      this.parseColorToHex(theme?.red),
-      this.parseColorToHex(theme?.green),
-      this.parseColorToHex(theme?.yellow),
-      this.parseColorToHex(theme?.blue),
-      this.parseColorToHex(theme?.magenta),
-      this.parseColorToHex(theme?.cyan),
-      this.parseColorToHex(theme?.white),
-      this.parseColorToHex(theme?.brightBlack),
-      this.parseColorToHex(theme?.brightRed),
-      this.parseColorToHex(theme?.brightGreen),
-      this.parseColorToHex(theme?.brightYellow),
-      this.parseColorToHex(theme?.brightBlue),
-      this.parseColorToHex(theme?.brightMagenta),
-      this.parseColorToHex(theme?.brightCyan),
-      this.parseColorToHex(theme?.brightWhite),
-    ];
-
-    return {
-      scrollbackLimit: scrollback,
-      fgColor: this.parseColorToHex(theme?.foreground),
-      bgColor: this.parseColorToHex(theme?.background),
-      cursorColor: this.parseColorToHex(theme?.cursor),
-      palette,
-    };
   }
 
   // ==========================================================================
@@ -336,9 +259,8 @@ export class Terminal implements ITerminalCore {
       parent.setAttribute('aria-label', 'Terminal input');
       parent.setAttribute('aria-multiline', 'true');
 
-      // Create WASM terminal with current dimensions and theme config
-      const wasmConfig = this.buildWasmConfig();
-      this.wasmTerm = this.ghostty!.createTerminal(this.cols, this.rows, wasmConfig);
+      // Create WASM terminal with current dimensions
+      this.wasmTerm = this.ghostty!.createTerminal(this.cols, this.rows);;
 
       // Create canvas element
       this.canvas = document.createElement('canvas');
@@ -453,7 +375,7 @@ export class Terminal implements ITerminalCore {
       // Use capture phase to ensure we get the event before browser scrolling
       parent.addEventListener('wheel', this.handleWheel, { passive: false, capture: true });
 
-      // Render initial blank screen
+      // Render initial blank screen (force full redraw)
       this.renderer.render(this.wasmTerm, true, this.viewportY, this, this.scrollbarOpacity);
 
       // Start render loop
@@ -638,8 +560,7 @@ export class Terminal implements ITerminalCore {
     if (this.wasmTerm) {
       this.wasmTerm.free();
     }
-    const wasmConfig = this.buildWasmConfig();
-    this.wasmTerm = this.ghostty!.createTerminal(this.cols, this.rows, wasmConfig);
+    this.wasmTerm = this.ghostty!.createTerminal(this.cols, this.rows);
 
     // Clear renderer
     this.renderer!.clear();
@@ -1045,15 +966,20 @@ export class Terminal implements ITerminalCore {
   private startRenderLoop(): void {
     const loop = () => {
       if (!this.isDisposed && this.isOpen) {
+        // Render using WASM's native dirty tracking
+        // The render() method:
+        // 1. Calls update() once to sync state and check dirty flags
+        // 2. Only redraws dirty rows when forceAll=false
+        // 3. Always calls clearDirty() at the end
+        this.renderer!.render(this.wasmTerm!, false, this.viewportY, this, this.scrollbarOpacity);
+
         // Check for cursor movement (Phase 2: onCursorMove event)
+        // Note: getCursor() reads from already-updated render state (from render() above)
         const cursor = this.wasmTerm!.getCursor();
         if (cursor.y !== this.lastCursorY) {
           this.lastCursorY = cursor.y;
           this.cursorMoveEmitter.fire();
         }
-
-        // Render only dirty lines for 60 FPS performance (with scrollbar opacity)
-        this.renderer!.render(this.wasmTerm!, false, this.viewportY, this, this.scrollbarOpacity);
 
         // Note: onRender event is intentionally not fired in the render loop
         // to avoid performance issues. For now, consumers can use requestAnimationFrame
