@@ -54,7 +54,7 @@ const withTerminals = async (fn: (term: GhosttyTerminal | XTerm) => Promise<void
   bench('ghostty-web', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
-    const term = new GhosttyTerminal({ ghostty });
+    const term = new GhosttyTerminal({ ghostty, scrollback: 1000 });
     await term.open(container);
     await fn(term);
     await term.dispose();
