@@ -430,6 +430,13 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
     bufPtr: number,
     bufLen: number
   ): number; // Returns total cells written or -1 on error
+  ghostty_render_state_get_grapheme(
+    terminal: TerminalHandle,
+    row: number,
+    col: number,
+    bufPtr: number,
+    bufLen: number
+  ): number; // Returns count of codepoints or -1 on error
 
   // Terminal modes
   ghostty_terminal_is_alternate_screen(terminal: TerminalHandle): boolean;
@@ -444,6 +451,13 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
     bufPtr: number,
     bufLen: number
   ): number; // Returns cells written or -1 on error
+  ghostty_terminal_get_scrollback_grapheme(
+    terminal: TerminalHandle,
+    offset: number,
+    col: number,
+    bufPtr: number,
+    bufLen: number
+  ): number; // Returns codepoint count or -1 on error
   ghostty_terminal_is_row_wrapped(terminal: TerminalHandle, row: number): number;
 
   // Response API (for DSR and other terminal queries)
@@ -525,7 +539,7 @@ export type TerminalHandle = number;
  * Cell structure matching ghostty_cell_t in C (16 bytes)
  */
 export interface GhosttyCell {
-  codepoint: number; // u32 (Unicode codepoint)
+  codepoint: number; // u32 (Unicode codepoint - first codepoint of grapheme)
   fg_r: number; // u8 (foreground red)
   fg_g: number; // u8 (foreground green)
   fg_b: number; // u8 (foreground blue)
@@ -535,6 +549,7 @@ export interface GhosttyCell {
   flags: number; // u8 (style flags bitfield)
   width: number; // u8 (character width: 1=normal, 2=wide, etc.)
   hyperlink_id: number; // u16 (0 = no link, >0 = hyperlink ID in set)
+  grapheme_len: number; // u8 (number of extra codepoints beyond first)
 }
 
 /**

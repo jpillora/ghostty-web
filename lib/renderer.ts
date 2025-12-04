@@ -24,6 +24,12 @@ export interface IRenderable {
   /** Returns true if a full redraw is needed (e.g., screen change) */
   needsFullRedraw?(): boolean;
   clearDirty(): void;
+  /**
+   * Get the full grapheme string for a cell at (row, col).
+   * For cells with grapheme_len > 0, this returns all codepoints combined.
+   * For simple cells, returns the single character.
+   */
+  getGraphemeString?(row: number, col: number): string;
 }
 
 export interface IScrollbackProvider {
@@ -102,6 +108,9 @@ export class CanvasRenderer {
 
   // Viewport tracking (for scrolling)
   private lastViewportY: number = 0;
+
+  // Current buffer being rendered (for grapheme lookups)
+  private currentBuffer: IRenderable | null = null;
 
   // Selection manager (for rendering selection overlay)
   private selectionManager?: SelectionManager;
@@ -253,6 +262,9 @@ export class CanvasRenderer {
     scrollbackProvider?: IScrollbackProvider,
     scrollbarOpacity: number = 1
   ): void {
+    // Store buffer reference for grapheme lookups in renderCell
+    this.currentBuffer = buffer;
+
     // getCursor() calls update() internally to ensure fresh state.
     // Multiple update() calls are safe - dirty state persists until clearDirty().
     const cursor = buffer.getCursor();
@@ -398,7 +410,11 @@ export class CanvasRenderer {
     // Track if anything was actually rendered
     let anyLinesRendered = false;
 
-    // Render each line
+    // Determine which rows need rendering.
+    // We also include adjacent rows (above and below) for each dirty row to handle
+    // glyph overflow - tall glyphs like Devanagari vowel signs can extend into
+    // adjacent rows' visual space.
+    const rowsToRender = new Set<number>();
     for (let y = 0; y < dims.rows; y++) {
       // When scrolled, always force render all lines since we're showing scrollback
       const needsRender =
@@ -406,7 +422,17 @@ export class CanvasRenderer {
           ? true
           : forceAll || buffer.isRowDirty(y) || selectionRows.has(y) || hyperlinkRows.has(y);
 
-      if (!needsRender) {
+      if (needsRender) {
+        rowsToRender.add(y);
+        // Include adjacent rows to handle glyph overflow
+        if (y > 0) rowsToRender.add(y - 1);
+        if (y < dims.rows - 1) rowsToRender.add(y + 1);
+      }
+    }
+
+    // Render each line
+    for (let y = 0; y < dims.rows; y++) {
+      if (!rowsToRender.has(y)) {
         continue;
       }
 
@@ -470,59 +496,95 @@ export class CanvasRenderer {
   }
 
   /**
-   * Render a single line
+   * Render a single line using two-pass approach:
+   * 1. First pass: Draw all cell backgrounds
+   * 2. Second pass: Draw all cell text and decorations
+   *
+   * This two-pass approach is necessary for proper rendering of complex scripts
+   * like Devanagari where diacritics (like vowel sign ि) can extend LEFT of the
+   * base character into the previous cell's visual area. If we draw backgrounds
+   * and text in a single pass (cell by cell), the background of cell N would
+   * cover any left-extending portions of graphemes from cell N-1.
    */
   private renderLine(line: GhosttyCell[], y: number, cols: number): void {
     const lineY = y * this.metrics.height;
 
-    // Clear line background
+    // Clear line background with theme color.
+    // We clear just the cell area - glyph overflow is handled by also
+    // redrawing adjacent rows (see render() method).
     this.ctx.fillStyle = this.theme.background;
     this.ctx.fillRect(0, lineY, cols * this.metrics.width, this.metrics.height);
 
-    // Render each cell
+    // PASS 1: Draw all cell backgrounds first
+    // This ensures all backgrounds are painted before any text, allowing text
+    // to "bleed" across cell boundaries without being covered by adjacent backgrounds
     for (let x = 0; x < line.length; x++) {
       const cell = line[x];
+      if (cell.width === 0) continue; // Skip spacer cells for wide characters
+      this.renderCellBackground(cell, x, y);
+    }
 
-      // Skip padding cells for wide characters
-      if (cell.width === 0) {
-        continue;
-      }
-
-      this.renderCell(cell, x, y);
+    // PASS 2: Draw all cell text and decorations
+    // Now text can safely extend beyond cell boundaries (for complex scripts)
+    for (let x = 0; x < line.length; x++) {
+      const cell = line[x];
+      if (cell.width === 0) continue; // Skip spacer cells for wide characters
+      this.renderCellText(cell, x, y);
     }
   }
 
   /**
-   * Render a single cell
+   * Render a cell's background only (Pass 1 of two-pass rendering)
    */
-  private renderCell(cell: GhosttyCell, x: number, y: number): void {
+  private renderCellBackground(cell: GhosttyCell, x: number, y: number): void {
     const cellX = x * this.metrics.width;
     const cellY = y * this.metrics.height;
-    const cellWidth = this.metrics.width * cell.width; // Handle wide chars (width=2)
+    const cellWidth = this.metrics.width * cell.width;
 
-    // Extract colors and handle inverse
-    let fg_r = cell.fg_r,
-      fg_g = cell.fg_g,
-      fg_b = cell.fg_b;
+    // Extract background color and handle inverse
     let bg_r = cell.bg_r,
       bg_g = cell.bg_g,
       bg_b = cell.bg_b;
 
     if (cell.flags & CellFlags.INVERSE) {
-      [fg_r, fg_g, fg_b, bg_r, bg_g, bg_b] = [bg_r, bg_g, bg_b, fg_r, fg_g, fg_b];
+      // When inverted, background becomes foreground
+      bg_r = cell.fg_r;
+      bg_g = cell.fg_g;
+      bg_b = cell.fg_b;
     }
 
     // Only draw cell background if it's different from the default (black)
-    // This lets the theme background (drawn in renderLine) show through for default cells
+    // This lets the theme background (drawn earlier) show through for default cells
     const isDefaultBg = bg_r === 0 && bg_g === 0 && bg_b === 0;
     if (!isDefaultBg) {
       this.ctx.fillStyle = this.rgbToCSS(bg_r, bg_g, bg_b);
       this.ctx.fillRect(cellX, cellY, cellWidth, this.metrics.height);
     }
+  }
+
+  /**
+   * Render a cell's text and decorations (Pass 2 of two-pass rendering)
+   */
+  private renderCellText(cell: GhosttyCell, x: number, y: number): void {
+    const cellX = x * this.metrics.width;
+    const cellY = y * this.metrics.height;
+    const cellWidth = this.metrics.width * cell.width;
 
     // Skip rendering if invisible
     if (cell.flags & CellFlags.INVISIBLE) {
       return;
+    }
+
+    // Extract colors and handle inverse
+    let fg_r = cell.fg_r,
+      fg_g = cell.fg_g,
+      fg_b = cell.fg_b;
+
+    if (cell.flags & CellFlags.INVERSE) {
+      // When inverted, foreground becomes background
+      fg_r = cell.bg_r;
+      fg_g = cell.bg_g;
+      fg_b = cell.bg_b;
     }
 
     // Set text style
@@ -542,7 +604,16 @@ export class CanvasRenderer {
     // Draw text
     const textX = cellX;
     const textY = cellY + this.metrics.baseline;
-    const char = String.fromCodePoint(cell.codepoint || 32); // Default to space if null
+
+    // Get the character to render - use grapheme lookup for complex scripts
+    let char: string;
+    if (cell.grapheme_len > 0 && this.currentBuffer?.getGraphemeString) {
+      // Cell has additional codepoints - get full grapheme cluster
+      char = this.currentBuffer.getGraphemeString(y, x);
+    } else {
+      // Simple cell - single codepoint
+      char = String.fromCodePoint(cell.codepoint || 32); // Default to space if null
+    }
     this.ctx.fillText(char, textX, textY);
 
     // Reset alpha

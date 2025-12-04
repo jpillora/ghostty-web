@@ -2764,6 +2764,90 @@ describe('unicode API', () => {
 });
 
 // ==========================================================================
+// Grapheme Cluster Support (Unicode complex scripts)
+// ==========================================================================
+
+describe('Grapheme Cluster Support', () => {
+  let container: HTMLElement | null = null;
+
+  beforeEach(async () => {
+    if (typeof document !== 'undefined') {
+      container = document.createElement('div');
+      document.body.appendChild(container);
+    }
+  });
+
+  afterEach(() => {
+    if (container && container.parentNode) {
+      container.parentNode.removeChild(container);
+      container = null;
+    }
+  });
+
+  test('cell grapheme_len is 0 for simple ASCII characters', async () => {
+    const term = await createIsolatedTerminal();
+    term.open(container!);
+    term.write('Hello');
+
+    // Get the viewport and check the first cell
+    const viewport = term.wasmTerm!.getViewport();
+    expect(viewport[0].codepoint).toBe(0x48); // 'H'
+    expect(viewport[0].grapheme_len).toBe(0);
+
+    term.dispose();
+  });
+
+  test('getGraphemeString returns simple characters correctly', async () => {
+    const term = await createIsolatedTerminal();
+    term.open(container!);
+    term.write('Test');
+
+    // Test basic ASCII
+    const grapheme = term.wasmTerm!.getGraphemeString(0, 0);
+    expect(grapheme).toBe('T');
+
+    term.dispose();
+  });
+
+  test('getGrapheme returns null for invalid coordinates', async () => {
+    const term = await createIsolatedTerminal();
+    term.open(container!);
+    term.write('Test');
+
+    // Test out of bounds
+    const result = term.wasmTerm!.getGrapheme(100, 100);
+    expect(result).toBeNull();
+
+    term.dispose();
+  });
+
+  test('getGrapheme returns array of codepoints', async () => {
+    const term = await createIsolatedTerminal();
+    term.open(container!);
+    term.write('A');
+
+    const codepoints = term.wasmTerm!.getGrapheme(0, 0);
+    expect(codepoints).not.toBeNull();
+    expect(codepoints!.length).toBeGreaterThanOrEqual(1);
+    expect(codepoints![0]).toBe(0x41); // 'A'
+
+    term.dispose();
+  });
+
+  test('grapheme cluster mode 2027 is enabled by default', async () => {
+    const term = await createIsolatedTerminal();
+    term.open(container!);
+
+    // Mode 2027 should be enabled by default for proper Unicode handling
+    // This is a DEC private mode, not ANSI
+    const graphemeClusterEnabled = term.wasmTerm!.getMode(2027, false);
+    expect(graphemeClusterEnabled).toBe(true);
+
+    term.dispose();
+  });
+});
+
+// ==========================================================================
 // xterm.js Compatibility: Write Behavior
 // ==========================================================================
 

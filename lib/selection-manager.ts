@@ -163,7 +163,19 @@ export class SelectionManager {
       for (let col = colStart; col <= colEnd; col++) {
         const cell = line[col];
         if (cell && cell.codepoint !== 0) {
-          const char = String.fromCodePoint(cell.codepoint);
+          // Use grapheme lookup for cells with multi-codepoint characters
+          let char: string;
+          if (cell.grapheme_len > 0) {
+            // Row is in scrollback or screen - determine which and use appropriate method
+            if (absRow < scrollbackLength) {
+              char = this.wasmTerm.getScrollbackGraphemeString(absRow, col);
+            } else {
+              const screenRow = absRow - scrollbackLength;
+              char = this.wasmTerm.getGraphemeString(screenRow, col);
+            }
+          } else {
+            char = String.fromCodePoint(cell.codepoint);
+          }
           lineText += char;
           if (char.trim()) {
             lastNonEmpty = lineText.length;

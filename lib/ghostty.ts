@@ -593,6 +593,7 @@ export class GhosttyTerminal {
         flags: u8[cellOffset + 10],
         width: u8[cellOffset + 11],
         hyperlink_id: view.getUint16(cellOffset + 12, true),
+        grapheme_len: u8[cellOffset + 14],
       });
     }
 
@@ -671,6 +672,7 @@ export class GhosttyTerminal {
           flags: 0,
           width: 1,
           hyperlink_id: 0,
+          grapheme_len: 0,
         });
       }
     }
@@ -694,7 +696,87 @@ export class GhosttyTerminal {
       cell.flags = u8[offset + 10];
       cell.width = u8[offset + 11];
       cell.hyperlink_id = view.getUint16(offset + 12, true);
+      cell.grapheme_len = u8[offset + 14]; // grapheme_len is at byte 14
     }
+  }
+
+  /** Small buffer for grapheme lookups (reused to avoid allocation) */
+  private graphemeBuffer: Uint32Array | null = null;
+  private graphemeBufferPtr: number = 0;
+
+  /**
+   * Get all codepoints for a grapheme cluster at the given position.
+   * For most cells this returns a single codepoint, but for complex scripts
+   * (Hindi, emoji with ZWJ, etc.) it returns multiple codepoints.
+   * @returns Array of codepoints, or null on error
+   */
+  getGrapheme(row: number, col: number): number[] | null {
+    // Allocate buffer on first use (16 codepoints should be enough for any grapheme)
+    if (!this.graphemeBuffer) {
+      this.graphemeBufferPtr = this.exports.ghostty_wasm_alloc_u8_array(16 * 4);
+      this.graphemeBuffer = new Uint32Array(this.memory.buffer, this.graphemeBufferPtr, 16);
+    }
+
+    const count = this.exports.ghostty_render_state_get_grapheme(
+      this.handle,
+      row,
+      col,
+      this.graphemeBufferPtr,
+      16
+    );
+
+    if (count < 0) return null;
+
+    // Re-create view in case memory grew
+    const view = new Uint32Array(this.memory.buffer, this.graphemeBufferPtr, count);
+    return Array.from(view);
+  }
+
+  /**
+   * Get a string representation of the grapheme at the given position.
+   * This properly handles complex scripts like Hindi, emoji with ZWJ, etc.
+   */
+  getGraphemeString(row: number, col: number): string {
+    const codepoints = this.getGrapheme(row, col);
+    if (!codepoints || codepoints.length === 0) return ' ';
+    return String.fromCodePoint(...codepoints);
+  }
+
+  /**
+   * Get all codepoints for a grapheme cluster in the scrollback buffer.
+   * @param offset Scrollback line offset (0 = oldest)
+   * @param col Column index
+   * @returns Array of codepoints, or null on error
+   */
+  getScrollbackGrapheme(offset: number, col: number): number[] | null {
+    // Reuse the same buffer as getGrapheme
+    if (!this.graphemeBuffer) {
+      this.graphemeBufferPtr = this.exports.ghostty_wasm_alloc_u8_array(16 * 4);
+      this.graphemeBuffer = new Uint32Array(this.memory.buffer, this.graphemeBufferPtr, 16);
+    }
+
+    const count = this.exports.ghostty_terminal_get_scrollback_grapheme(
+      this.handle,
+      offset,
+      col,
+      this.graphemeBufferPtr,
+      16
+    );
+
+    if (count < 0) return null;
+
+    // Re-create view in case memory grew
+    const view = new Uint32Array(this.memory.buffer, this.graphemeBufferPtr, count);
+    return Array.from(view);
+  }
+
+  /**
+   * Get a string representation of a grapheme in the scrollback buffer.
+   */
+  getScrollbackGraphemeString(offset: number, col: number): string {
+    const codepoints = this.getScrollbackGrapheme(offset, col);
+    if (!codepoints || codepoints.length === 0) return ' ';
+    return String.fromCodePoint(...codepoints);
   }
 
   private invalidateBuffers(): void {
