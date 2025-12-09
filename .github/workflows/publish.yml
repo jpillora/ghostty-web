@@ -187,16 +187,18 @@ jobs:
         id: version
         working-directory: demo
         run: |
-          BASE_VERSION=$(jq -r .version package.json)
-
           if [[ "${{ steps.detect.outputs.is_tag }}" == "true" ]]; then
-            NPM_VERSION="${BASE_VERSION}"
+            # For tags, extract version from git tag (strip 'v' prefix)
+            NPM_VERSION="${GITHUB_REF#refs/tags/v}"
             NPM_TAG="latest"
             # Pin to exact version to avoid npx cache issues with transitive deps
-            GHOSTTY_WEB_DEP="${BASE_VERSION}"
+            GHOSTTY_WEB_DEP="${NPM_VERSION}"
           else
+            # Get base version from latest tag for pre-releases
+            LATEST_TAG=$(git describe --tags --abbrev=0)
+            BASE_VERSION="${LATEST_TAG#v}"
             GIT_COMMIT=$(git rev-parse --short HEAD)
-            COMMITS_SINCE_TAG=$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD) 2>/dev/null || echo "0")
+            COMMITS_SINCE_TAG=$(git rev-list --count HEAD ^${LATEST_TAG})
             NPM_VERSION="${BASE_VERSION}-next.${COMMITS_SINCE_TAG}.g${GIT_COMMIT}"
             NPM_TAG="next"
             # Pin to exact version to avoid npx cache issues with transitive deps
