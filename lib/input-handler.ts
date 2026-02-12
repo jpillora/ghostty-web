@@ -187,6 +187,7 @@ export class InputHandler {
   private keypressListener: ((e: KeyboardEvent) => void) | null = null;
   private pasteListener: ((e: ClipboardEvent) => void) | null = null;
   private beforeInputListener: ((e: InputEvent) => void) | null = null;
+  private inputListener: ((e: Event) => void) | null = null;
   private compositionStartListener: ((e: CompositionEvent) => void) | null = null;
   private compositionUpdateListener: ((e: CompositionEvent) => void) | null = null;
   private compositionEndListener: ((e: CompositionEvent) => void) | null = null;
@@ -207,6 +208,10 @@ export class InputHandler {
   private lastBeforeInputData: string | null = null;
   private lastBeforeInputTime = 0;
   private static readonly BEFORE_INPUT_IGNORE_MS = 100;
+  private dictationBuffer = '';
+  private dictationFlushed = '';
+  private dictationFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly DICTATION_FLUSH_MS = 80;
 
   /**
    * Create a new InputHandler
@@ -286,6 +291,8 @@ export class InputHandler {
     if (this.inputElement) {
       this.beforeInputListener = this.handleBeforeInput.bind(this);
       this.inputElement.addEventListener('beforeinput', this.beforeInputListener);
+      this.inputListener = this.handleInputEvent.bind(this);
+      this.inputElement.addEventListener('input', this.inputListener);
     }
 
     this.compositionStartListener = this.handleCompositionStart.bind(this);
@@ -368,6 +375,9 @@ export class InputHandler {
     if (this.isComposing || event.isComposing || event.keyCode === 229) {
       return;
     }
+
+    this.flushDictation();
+    this.resetDictation();
 
     // Emit onKey event first (before any processing)
     if (this.onKeyCallback) {
@@ -610,15 +620,19 @@ export class InputHandler {
         break;
       case 'insertLineBreak':
       case 'insertParagraph':
+        this.flushDictation();
         output = '\r';
         break;
       case 'deleteContentBackward':
+        this.flushDictation();
         output = '\x7F';
         break;
       case 'deleteContentForward':
+        this.flushDictation();
         output = '\x1B[3~';
         break;
       case 'insertFromPaste':
+        this.flushDictation();
         if (!data) {
           return;
         }
@@ -654,10 +668,89 @@ export class InputHandler {
 
     event.preventDefault();
     event.stopPropagation();
+
+    // Buffer insertText events that didn't come from keydown (likely dictation).
+    // iOS dictation sends a partial result immediately, then replaces it with
+    // the full text when dictation ends. Buffering with a short flush delay
+    // lets us collect the burst and avoid duplicating the partial prefix.
+    if ((inputType === 'insertText' || inputType === 'insertReplacementText') && !this.lastKeyDownData) {
+      this.bufferDictation(output);
+      if (data) {
+        this.recordBeforeInputData(data);
+      }
+      return;
+    }
+
     this.onDataCallback(output);
     if (data) {
       this.recordBeforeInputData(data);
     }
+  }
+
+  /**
+   * Handle input event on textarea (fallback for dictation, autofill, etc.)
+   * Catches text that was inserted into the textarea but not captured by
+   * beforeinput or composition handlers (e.g. iOS dictation with null event.data).
+   */
+  private handleInputEvent(_event: Event): void {
+    if (this.isDisposed || this.isComposing) return;
+
+    const textarea = this.inputElement as HTMLTextAreaElement | undefined;
+    if (!textarea || !textarea.value) return;
+
+    const text = textarea.value;
+    textarea.value = '';
+
+    if (this.shouldIgnoreBeforeInput(text)) return;
+    if (this.shouldIgnoreBeforeInputFromComposition(text)) return;
+
+    this.onDataCallback(text.replace(/\n/g, '\r'));
+  }
+
+  /**
+   * Buffer text from dictation-like input. Collects fragments and flushes
+   * after a short delay to handle iOS dictation's replace-partial pattern.
+   */
+  private bufferDictation(text: string): void {
+    this.dictationBuffer += text;
+    if (this.dictationFlushTimer !== null) {
+      clearTimeout(this.dictationFlushTimer);
+    }
+    this.dictationFlushTimer = setTimeout(() => this.flushDictation(), InputHandler.DICTATION_FLUSH_MS);
+  }
+
+  /**
+   * Flush buffered dictation text to the terminal. If a previous partial
+   * was already flushed and the new buffer starts with it, only send the
+   * suffix (new text beyond what was already sent). This avoids duplication
+   * without needing backspace characters.
+   */
+  private flushDictation(): void {
+    if (this.dictationFlushTimer !== null) {
+      clearTimeout(this.dictationFlushTimer);
+      this.dictationFlushTimer = null;
+    }
+    const buf = this.dictationBuffer;
+    this.dictationBuffer = '';
+    if (!buf) return;
+    const prev = this.dictationFlushed;
+    let output: string;
+    if (prev && buf.startsWith(prev)) {
+      output = buf.slice(prev.length);
+    } else {
+      output = buf;
+    }
+    if (output) {
+      this.onDataCallback(output);
+    }
+    this.dictationFlushed = buf.length > 1 ? buf : '';
+  }
+
+  /**
+   * Reset dictation tracking state (called when non-dictation input occurs)
+   */
+  private resetDictation(): void {
+    this.dictationFlushed = '';
   }
 
   /**
@@ -693,6 +786,11 @@ export class InputHandler {
       }
       this.onDataCallback(data);
       this.recordCompositionData(data);
+    }
+
+    const textarea = this.inputElement as HTMLTextAreaElement | undefined;
+    if (textarea) {
+      textarea.value = '';
     }
 
     this.cleanupCompositionTextNodes();
@@ -1036,6 +1134,11 @@ export class InputHandler {
   dispose(): void {
     if (this.isDisposed) return;
 
+    if (this.dictationFlushTimer !== null) {
+      clearTimeout(this.dictationFlushTimer);
+      this.dictationFlushTimer = null;
+    }
+
     if (this.keydownListener) {
       this.container.removeEventListener('keydown', this.keydownListener);
       this.keydownListener = null;
@@ -1057,6 +1160,11 @@ export class InputHandler {
     if (this.beforeInputListener && this.inputElement) {
       this.inputElement.removeEventListener('beforeinput', this.beforeInputListener);
       this.beforeInputListener = null;
+    }
+
+    if (this.inputListener && this.inputElement) {
+      this.inputElement.removeEventListener('input', this.inputListener);
+      this.inputListener = null;
     }
 
     if (this.compositionStartListener) {
