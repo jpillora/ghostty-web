@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@lydell/node-pty": "^1.0.1",
-    "ghostty-web": "latest",
+    "@jpillora/ghostty-web": "latest",
     "ws": "^8.18.0"
   },
   "files": [
@@ -29,13 +29,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/coder/ghostty-web.git",
+    "url": "https://github.com/jpillora/ghostty-web",
     "directory": "demo"
   },
-  "bugs": "https://github.com/coder/ghostty-web/issues",
-  "homepage": "https://github.com/coder/ghostty-web/tree/main/demo#readme",
   "license": "MIT",
-  "author": "Coder",
   "publishConfig": {
     "access": "public"
   }

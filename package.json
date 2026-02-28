@@ -1,5 +1,5 @@
 {
-  "name": "ghostty-web",
+  "name": "@jpillora/ghostty-web",
   "version": "0.3.0",
   "description": "Web-based terminal emulator using Ghostty's VT100 parser via WebAssembly",
   "type": "module",
@@ -33,12 +33,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/coder/ghostty-web.git"
+    "url": "https://github.com/jpillora/ghostty-web"
   },
-  "bugs": "https://github.com/coder/ghostty-web/issues",
-  "homepage": "https://github.com/coder/ghostty-web#readme",
   "license": "MIT",
-  "author": "Coder",
   "publishConfig": {
     "access": "public"
   },
