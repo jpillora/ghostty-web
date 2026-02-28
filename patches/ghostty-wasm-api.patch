@@ -1,8 +1,8 @@
 diff --git a/.gitignore b/.gitignore
-index e451b171a..89c623d8b 100644
+index 40a04dbae..ccb799462 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -23,3 +23,4 @@ glad.zip
+@@ -25,3 +25,4 @@ glad.zip
  /ghostty.qcow2
  
  vgcore.*
@@ -437,10 +437,10 @@ index bc92597f5..d0ee49c1b 100644
      _ = @import("../../lib/allocator.zig");
 diff --git a/src/terminal/c/terminal.zig b/src/terminal/c/terminal.zig
 new file mode 100644
-index 000000000..73ae2e6fa
+index 000000000..6dab870cd
 --- /dev/null
 +++ b/src/terminal/c/terminal.zig
-@@ -0,0 +1,1123 @@
+@@ -0,0 +1,1153 @@
 +//! C API wrapper for Terminal
 +//!
 +//! This provides a minimal, high-performance interface to Ghostty's Terminal
@@ -557,10 +557,10 @@ index 000000000..73ae2e6fa
 +            .insert_lines => self.terminal.insertLines(value),
 +            .insert_blanks => self.terminal.insertBlanks(value),
 +            .delete_lines => self.terminal.deleteLines(value),
-+            .scroll_up => self.terminal.scrollUp(value),
++            .scroll_up => try self.terminal.scrollUp(value),
 +            .scroll_down => self.terminal.scrollDown(value),
-+            .horizontal_tab => try self.horizontalTab(value),
-+            .horizontal_tab_back => try self.horizontalTabBack(value),
++            .horizontal_tab => self.horizontalTab(value),
++            .horizontal_tab_back => self.horizontalTabBack(value),
 +            .tab_clear_current => self.terminal.tabClear(.current),
 +            .tab_clear_all => self.terminal.tabClear(.all),
 +            .tab_set => self.terminal.tabSet(),
@@ -582,7 +582,7 @@ index 000000000..73ae2e6fa
 +                }
 +            },
 +            .save_cursor => self.terminal.saveCursor(),
-+            .restore_cursor => try self.terminal.restoreCursor(),
++            .restore_cursor => self.terminal.restoreCursor(),
 +            .invoke_charset => self.terminal.invokeCharset(value.bank, value.charset, value.locking),
 +            .configure_charset => self.terminal.configureCharset(value.slot, value.charset),
 +            .set_attribute => switch (value) {
@@ -610,14 +610,7 @@ index 000000000..73ae2e6fa
 +            .full_reset => self.terminal.fullReset(),
 +            .start_hyperlink => try self.terminal.screens.active.startHyperlink(value.uri, value.id),
 +            .end_hyperlink => self.terminal.screens.active.endHyperlink(),
-+            .prompt_start => {
-+                self.terminal.screens.active.cursor.page_row.semantic_prompt = .prompt;
-+                self.terminal.flags.shell_redraws_prompt = value.redraw;
-+            },
-+            .prompt_continuation => self.terminal.screens.active.cursor.page_row.semantic_prompt = .prompt_continuation,
-+            .prompt_end => self.terminal.markSemanticPrompt(.input),
-+            .end_of_input => self.terminal.markSemanticPrompt(.command),
-+            .end_of_command => self.terminal.screens.active.cursor.page_row.semantic_prompt = .input,
++            .semantic_prompt => try self.terminal.semanticPrompt(value),
 +            .mouse_shape => self.terminal.mouse_shape = value,
 +            .color_operation => try self.colorOperation(value.op, &value.requests),
 +            .kitty_color_report => try self.kittyColorOperation(value),
@@ -697,18 +690,18 @@ index 000000000..73ae2e6fa
 +        }
 +    }
 +
-+    inline fn horizontalTab(self: *ResponseHandler, count: u16) !void {
++    inline fn horizontalTab(self: *ResponseHandler, count: u16) void {
 +        for (0..count) |_| {
 +            const x = self.terminal.screens.active.cursor.x;
-+            try self.terminal.horizontalTab();
++            self.terminal.horizontalTab();
 +            if (x == self.terminal.screens.active.cursor.x) break;
 +        }
 +    }
 +
-+    inline fn horizontalTabBack(self: *ResponseHandler, count: u16) !void {
++    inline fn horizontalTabBack(self: *ResponseHandler, count: u16) void {
 +        for (0..count) |_| {
 +            const x = self.terminal.screens.active.cursor.x;
-+            try self.terminal.horizontalTabBack();
++            self.terminal.horizontalTabBack();
 +            if (x == self.terminal.screens.active.cursor.x) break;
 +        }
 +    }
@@ -728,13 +721,50 @@ index 000000000..73ae2e6fa
 +            .save_cursor => if (enabled) {
 +                self.terminal.saveCursor();
 +            } else {
-+                try self.terminal.restoreCursor();
++                self.terminal.restoreCursor();
 +            },
 +            .enable_mode_3 => {},
 +            .@"132_column" => try self.terminal.deccolm(
 +                self.terminal.screens.active.alloc,
 +                if (enabled) .@"132_cols" else .@"80_cols",
 +            ),
++            .synchronized_output,
++            .linefeed,
++            .in_band_size_reports,
++            .focus_event,
++            => {},
++            .mouse_event_x10 => {
++                if (enabled) {
++                    self.terminal.flags.mouse_event = .x10;
++                } else {
++                    self.terminal.flags.mouse_event = .none;
++                }
++            },
++            .mouse_event_normal => {
++                if (enabled) {
++                    self.terminal.flags.mouse_event = .normal;
++                } else {
++                    self.terminal.flags.mouse_event = .none;
++                }
++            },
++            .mouse_event_button => {
++                if (enabled) {
++                    self.terminal.flags.mouse_event = .button;
++                } else {
++                    self.terminal.flags.mouse_event = .none;
++                }
++            },
++            .mouse_event_any => {
++                if (enabled) {
++                    self.terminal.flags.mouse_event = .any;
++                } else {
++                    self.terminal.flags.mouse_event = .none;
++                }
++            },
++            .mouse_format_utf8 => self.terminal.flags.mouse_format = if (enabled) .utf8 else .x10,
++            .mouse_format_sgr => self.terminal.flags.mouse_format = if (enabled) .sgr else .x10,
++            .mouse_format_urxvt => self.terminal.flags.mouse_format = if (enabled) .urxvt else .x10,
++            .mouse_format_sgr_pixels => self.terminal.flags.mouse_format = if (enabled) .sgr_pixels else .x10,
 +            else => {},
 +        }
 +    }
@@ -1564,8 +1594,26 @@ index 000000000..73ae2e6fa
 +    try std.testing.expectEqual(@as(u32, 'l'), cells[3].codepoint);
 +    try std.testing.expectEqual(@as(u32, 'o'), cells[4].codepoint);
 +}
+diff --git a/src/terminal/osc/parsers/semantic_prompt.zig b/src/terminal/osc/parsers/semantic_prompt.zig
+index d3a117515..8f1ea7477 100644
+--- a/src/terminal/osc/parsers/semantic_prompt.zig
++++ b/src/terminal/osc/parsers/semantic_prompt.zig
+@@ -17,6 +17,13 @@ pub const Command = struct {
+     action: Action,
+     options_unvalidated: []const u8,
+ 
++    /// C ABI representation - semantic prompt actions are handled natively
++    /// so we don't need to expose the full struct over the C boundary.
++    pub const C = void;
++    pub fn cval(_: Command) C {
++        return {};
++    }
++
+     pub const Action = enum {
+         fresh_line, // 'L'
+         fresh_line_new_prompt, // 'A'
 diff --git a/src/terminal/render.zig b/src/terminal/render.zig
-index b6430ea34..10e0ef79d 100644
+index 2332866ac..dcfa15f57 100644
 --- a/src/terminal/render.zig
 +++ b/src/terminal/render.zig
 @@ -322,13 +322,14 @@ pub const RenderState = struct {
