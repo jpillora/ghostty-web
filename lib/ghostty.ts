@@ -60,10 +60,22 @@ export class Ghostty {
     return new GhosttyTerminal(this.exports, this.memory, cols, rows, config);
   }
 
+  /**
+   * Load a Ghostty instance (compile + instantiate).
+   * Each call creates a fully isolated WASM instance with its own memory.
+   */
   static async load(wasmPath?: string): Promise<Ghostty> {
-    // If explicit path provided, use it
+    const module = await Ghostty.compile(wasmPath);
+    return Ghostty.fromModule(module);
+  }
+
+  /**
+   * Compile WASM bytes into a reusable module (expensive, do once).
+   * The compiled module can be instantiated multiple times via fromModule().
+   */
+  static async compile(wasmPath?: string): Promise<WebAssembly.Module> {
     if (wasmPath) {
-      return Ghostty.loadFromPath(wasmPath);
+      return Ghostty.compileFromPath(wasmPath);
     }
 
     // Resolve path relative to this module
@@ -88,7 +100,7 @@ export class Ghostty {
     let lastError: Error | null = null;
     for (const path of defaultPaths) {
       try {
-        return await Ghostty.loadFromPath(path);
+        return await Ghostty.compileFromPath(path);
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
       }
@@ -96,7 +108,28 @@ export class Ghostty {
     throw lastError || new Error('Failed to load Ghostty WASM');
   }
 
-  private static async loadFromPath(path: string): Promise<Ghostty> {
+  /**
+   * Create a new Ghostty instance from a pre-compiled module (cheap, do per terminal).
+   * Each call returns an isolated instance with its own WASM memory.
+   */
+  static fromModule(module: WebAssembly.Module): Ghostty {
+    let wasmInstance: WebAssembly.Instance;
+    wasmInstance = new WebAssembly.Instance(module, {
+      env: {
+        log: (ptr: number, len: number) => {
+          const bytes = new Uint8Array(
+            (wasmInstance.exports as GhosttyWasmExports).memory.buffer,
+            ptr,
+            len
+          );
+          console.log('[ghostty-vt]', new TextDecoder().decode(bytes));
+        },
+      },
+    });
+    return new Ghostty(wasmInstance);
+  }
+
+  private static async compileFromPath(path: string): Promise<WebAssembly.Module> {
     let wasmBytes: ArrayBuffer | undefined;
 
     // Try Bun.file first (for Bun environments)
@@ -138,20 +171,7 @@ export class Ghostty {
       throw new Error(`Could not load WASM from path: ${path}`);
     }
 
-    const wasmModule = await WebAssembly.compile(wasmBytes);
-    const wasmInstance = await WebAssembly.instantiate(wasmModule, {
-      env: {
-        log: (ptr: number, len: number) => {
-          const bytes = new Uint8Array(
-            (wasmInstance.exports as GhosttyWasmExports).memory.buffer,
-            ptr,
-            len
-          );
-          console.log('[ghostty-vt]', new TextDecoder().decode(bytes));
-        },
-      },
-    });
-    return new Ghostty(wasmInstance);
+    return WebAssembly.compile(wasmBytes);
   }
 }
 

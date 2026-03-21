@@ -6,15 +6,16 @@
 
 import { Ghostty } from './ghostty';
 
-// Module-level Ghostty instance (initialized by init())
-let ghosttyInstance: Ghostty | null = null;
+// Pre-compiled WASM module (initialized by init())
+// Each Terminal gets its own instance via fromModule() for full memory isolation.
+let compiledModule: WebAssembly.Module | null = null;
 
 /**
- * Initialize the ghostty-web library by loading the WASM module.
+ * Initialize the ghostty-web library by compiling the WASM module.
  * Must be called before creating any Terminal instances.
  *
- * This creates a shared WASM instance that all Terminal instances will use.
- * For test isolation, pass a Ghostty instance directly to Terminal constructor.
+ * The compiled module is cached and used to create isolated WASM instances
+ * for each Terminal (each gets its own memory space).
  *
  * @example
  * ```typescript
@@ -26,19 +27,20 @@ let ghosttyInstance: Ghostty | null = null;
  * ```
  */
 export async function init(): Promise<void> {
-  if (ghosttyInstance) {
-    return; // Already initialized
+  if (compiledModule) {
+    return; // Already compiled
   }
-  ghosttyInstance = await Ghostty.load();
+  compiledModule = await Ghostty.compile();
 }
 
 /**
- * Get the initialized Ghostty instance.
+ * Create a new isolated Ghostty instance from the pre-compiled module.
+ * Each call returns a fresh WASM instance with its own memory.
  * Throws if init() hasn't been called.
  * @internal
  */
 export function getGhostty(): Ghostty {
-  if (!ghosttyInstance) {
+  if (!compiledModule) {
     throw new Error(
       'ghostty-web not initialized. Call init() before creating Terminal instances.\n' +
         'Example:\n' +
@@ -51,7 +53,7 @@ export function getGhostty(): Ghostty {
         '  const term = new Terminal({ ghostty });'
     );
   }
-  return ghosttyInstance;
+  return Ghostty.fromModule(compiledModule);
 }
 
 // Main Terminal class
