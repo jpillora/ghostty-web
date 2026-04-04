@@ -35,8 +35,9 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm install -g npm@latest
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
           npm publish --access public --provenance
