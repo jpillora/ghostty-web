@@ -33,7 +33,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Publish package
         run: |
@@ -42,3 +41,5 @@ jobs:
             sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
           fi
           npm publish --access public --provenance
+        env:
+          NPM_CONFIG_PROVENANCE: true
