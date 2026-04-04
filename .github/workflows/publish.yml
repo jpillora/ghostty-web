@@ -36,8 +36,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF_NAME#v}
